@@ -1,43 +1,59 @@
 const fs = require('fs');
 const csv = require('csv-parse/sync');
 
-// Read the CSV file
-const input = fs.readFileSync('./script/data/ETHFI_finalv2_distribution.csv', 'utf8');
+// Constants
+const INPUT_FILE = './script/data/ETHFI_finalv2_distribution.csv';
+const OUTPUT_FILE = './script/data/ETHFI_finalv2_distribution.json';
 
-// Parse the CSV data
-const records = csv.parse(input, {
-  columns: true,
-  skip_empty_lines: true
-});
+try {
+  // Read the CSV file
+  const input = fs.readFileSync(INPUT_FILE, 'utf8');
 
-// Create the output object
-const output = {};
-let totalTokens = 0n;
+  // Parse the CSV data
+  const records = csv.parse(input, {
+    columns: true,
+    skip_empty_lines: true,
+  });
 
-records.forEach(record => {
-  console.log('record:', record)
-  const wallet = record['wallet'];
-  console.log('wallet:', wallet)
-  const amountStr = record['ETHFI'];
-  // Remove the comma and convert to cents (multiply by 100)
-  // 5,294.84289046560000000
-  const valueInCents = BigInt(Math.round(parseFloat(amountStr.replace(",", "")) * 1e17));
-
-  // Multiply by 10 to get to 1e18 (since we're already at 1e17 cents)
-  const amount = valueInCents * BigInt(10);
-  console.log('amount:', amount)
-
-  totalTokens += amount;
-  console.log('totalTokens:', totalTokens)
-
-  if (wallet && amount && amount > 0) {
-    output[wallet] = amount.toString();
+  // Validate CSV data
+  if (!records.length || !records[0].wallet || !records[0].ETHFI) {
+    throw new Error('Invalid CSV format: missing required columns (wallet, ETHFI).');
   }
-});
 
-console.log('totalTokens:', totalTokens)
+  // Create the output object
+  const output = {};
+  let totalTokens = 0n;
 
-// Write the output to a JSON file
-fs.writeFileSync('./script/data/ETHFI_finalv2_distribution.json', JSON.stringify(output, null, 2));
+  records.forEach((record) => {
+    const wallet = record['wallet'];
+    const amountStr = record['ETHFI'];
 
-console.log('Conversion complete. Check output.json for the result.');
+    // Validate wallet address
+    if (!wallet || !wallet.startsWith('0x') || wallet.length !== 42) {
+      console.error(`Invalid wallet address: ${wallet}`);
+      return; // Skip this record
+    }
+
+    // Convert amount to BigInt (1e18 precision)
+    const amount = BigInt(Math.round(parseFloat(amountStr.replace(/,/g, '')) * 1e18));
+
+    // Update total tokens
+    totalTokens += amount;
+
+    // Add to output if wallet and amount are valid
+    if (amount > 0n) {
+      output[wallet] = amount.toString();
+    }
+  });
+
+  // Write the output to a JSON file
+  fs.writeFileSync(OUTPUT_FILE, JSON.stringify(output, null, 2));
+
+  // Log success
+  console.log(`Total records processed: ${records.length}`);
+  console.log(`Total tokens distributed: ${totalTokens.toString()}`);
+  console.log(`Conversion complete. Check ${OUTPUT_FILE} for the result.`);
+} catch (error) {
+  console.error('Error:', error.message);
+  process.exit(1);
+}
